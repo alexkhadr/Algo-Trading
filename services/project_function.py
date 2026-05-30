@@ -1,7 +1,7 @@
 from services.strategies import *
 
 
-def project_function(periodReturns, periodFactRet):
+def project_function(periodReturns, periodFactRet, x0=None):
     """
     Please feel free to modify this function as desired
     :param periodReturns:
