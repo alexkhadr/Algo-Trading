@@ -1,6 +1,8 @@
 import numpy as np
 from services.estimators import *
 from services.optimization import *
+from scipy.optimize import minimize
+
 
 
 # this file will produce portfolios as outputs from data - the strategies can be implemented as classes or functions
