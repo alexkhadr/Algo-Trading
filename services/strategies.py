@@ -134,3 +134,52 @@ class RiskParity:
             x = result.x
 
         return x
+    
+
+class RidgeLedoitWolf_MVO:
+    """
+    Strategy combining:
+      - Ridge regression on Fama-French factors for expected returns (mu)
+      - Ledoit-Wolf covariance shrunk toward the factor model covariance (Q)
+      - Max-Sharpe MVO with turnover penalty
+    """
+
+    def __init__(self, NumObs=60, ridge_alpha=0.1, lw_shrink_weight=0.5,
+                 turnover_penalty=0.5, prev_weights=None):
+        """
+        :param NumObs:            rolling window length in months
+        :param ridge_alpha:       Ridge L2 regularization strength
+        :param lw_shrink_weight:  weight on factor model target in LW blend (0=pure sample, 1=pure factor)
+        :param turnover_penalty:  lambda in objective: min variance - mu'w + lambda*||w - w_prev||_1
+        :param prev_weights:      previous portfolio weights (updated externally each period)
+        """
+        self.NumObs = NumObs
+        self.ridge_alpha = ridge_alpha
+        self.lw_shrink_weight = lw_shrink_weight
+        self.turnover_penalty = turnover_penalty
+        self.prev_weights = prev_weights  # None on first call → no penalty applied
+
+    def execute_strategy(self, periodReturns, periodFactRet):
+        """
+        :param periodReturns:   DataFrame, all available returns up to rebalancing date
+        :param periodFactRet:   DataFrame, all available factor returns up to rebalancing date
+        :return:                x, weight vector (n,)
+        """
+        # Use the most recent NumObs months
+        returns = periodReturns.iloc[-self.NumObs:, :]
+        factRet = periodFactRet.iloc[-self.NumObs:, :]
+
+        # Step 1: Ridge factor model → mu and factor-model covariance as shrinkage target
+        mu, Q_factor, _, _, _ = ridge_factor_model(returns, factRet, alpha=self.ridge_alpha)
+
+        # Step 2: Ledoit-Wolf covariance blended toward factor model target
+        Q = ledoit_wolf_covariance(returns,
+                                   shrink_target=Q_factor,
+                                   shrink_weight=self.lw_shrink_weight)
+
+        # Step 3: MVO with optional turnover penalty
+        x = MVO(mu, Q,
+                prev_weights=self.prev_weights,
+                turnover_penalty=self.turnover_penalty)
+
+        return x
