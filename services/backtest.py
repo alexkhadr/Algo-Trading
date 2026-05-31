@@ -230,7 +230,8 @@ STRATEGY_REGISTRY = {
 
 def grid_search(prices, factorReturns, strategy_name, param_grid,
                 init_window=60, rebal_freq=6,
-                train_end=None, val_end=None):
+                train_end=None, val_end=None,
+                turnover_weight=0.05):
     """
     Generic grid search over any registered strategy's hyperparameters.
 
@@ -270,29 +271,46 @@ def grid_search(prices, factorReturns, strategy_name, param_grid,
     print(f"Strategy: {strategy_name}")
     print(f"Running grid search over {len(combinations)} combinations...\n")
 
-    best_sharpe = -np.inf
+    best_score = -np.inf
     best_params = None
+    best_summary = None
 
     for combo in combinations:
-        params     = dict(zip(keys, combo))
+
+        params = dict(zip(keys, combo))
+
         combined_p = pd.concat([train_prices, val_prices])
         combined_f = pd.concat([train_factors, val_factors])
 
         _, summary = run_backtest(
-            combined_p, combined_f,
+            combined_p,
+            combined_f,
             strategy_fn=factory(params),
             init_window=train_end,
             rebal_freq=rebal_freq
         )
 
-        print(f"Params: {params}  ->  Val Sharpe: {summary['sharpe']:.4f}")
+        score = (
+            summary["sharpe"]
+            - turnover_weight * summary["avg_turnover"]
+        )
 
-        if summary['sharpe'] > best_sharpe:
-            best_sharpe = summary['sharpe']
+        print(
+            f"Params: {params}"
+            f" -> Sharpe: {summary['sharpe']:.4f}"
+            f", Turnover: {summary['avg_turnover']:.4f}"
+            f", Score: {score:.4f}"
+        )
+
+        if score > best_score:
+            best_score = score
             best_params = params
+            best_summary = summary
 
-    print(f"\nBest params:            {best_params}")
-    print(f"Best validation Sharpe: {best_sharpe:.4f}\n")
+    print(f"\nBest params: {best_params}")
+    print(f"Best validation Sharpe: {best_summary['sharpe']:.4f}")
+    print(f"Best validation Turnover: {best_summary['avg_turnover']:.4f}")
+    print(f"Best validation Score: {best_score:.4f}\n")
 
     # Final test evaluation with best params
     print("Evaluating on test set...")
