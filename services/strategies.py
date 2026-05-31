@@ -171,16 +171,17 @@ class RidgeLedoitWolf_MVO:
         returns = periodReturns.iloc[-self.NumObs:, :]
         factRet = periodFactRet.iloc[-self.NumObs:, :]
 
-        # Step 1: Ridge factor model → mu and factor-model covariance as shrinkage target
-        mu, Q_factor, _, _, _ = ridge_factor_model(returns, factRet, alpha=self.ridge_alpha)
+        # Step 1: Ridge factor model → mu and factor-model covariance as LW target
+        mu, Q_lw_target, _, _, _ = ridge_factor_model(returns, factRet,
+                                                       alpha=self.ridge_alpha)
 
-        # Step 2: Ledoit-Wolf covariance blended toward factor model target
-        Q = ledoit_wolf_covariance(returns,
-                                   shrink_target=Q_factor,
-                                   shrink_weight=self.lw_shrink_weight)
+        # Step 2: Apply Ledoit-Wolf shrinkage toward the factor model covariance
+        Q_lw = ledoit_wolf_covariance(returns,
+                                      shrink_target=Q_lw_target,
+                                      shrink_weight=self.lw_shrink_weight)
 
-        # Step 3: MVO with optional turnover penalty
-        x = MVO(mu, Q,
+        # Step 3: MVO — just pass Q_lw directly, no extra parameters needed
+        x = MVO(mu, Q_lw,
                 prev_weights=self.prev_weights,
                 turnover_penalty=self.turnover_penalty)
 

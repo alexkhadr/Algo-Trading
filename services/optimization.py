@@ -30,25 +30,25 @@ def clean_weights(x, n):
     return x
 
 
-def mean_variance_optimization(mu, Q, risk_aversion=5.0, max_weight=0.25):
+def mean_variance_optimization(mu, Q, risk_aversion=5.0, max_weight=0.25,
+                                prev_weights=None, turnover_penalty=0.0):
     """
     Long-only Mean-Variance Optimization.
 
     Model:
 
-        maximize        mu' x - (risk_aversion / 2) x' Q x
+        maximize        mu' x - (risk_aversion / 2) * x' Q x - lambda * ||x - x_prev||_1
 
         subject to      sum(x) = 1
                         0 <= x_i <= max_weight
 
-    Inputs:
-        mu: expected return vector
-        Q: covariance matrix
-        risk_aversion: controls the trade-off between return and risk
-        max_weight: maximum allocation allowed in one asset
-
-    Output:
-        x: portfolio weights
+    :param mu:               (n,) expected return vector
+    :param Q:                (n x n) covariance matrix — pass Q_lw for Ledoit-Wolf
+    :param risk_aversion:    controls return vs risk trade-off
+    :param max_weight:       maximum allocation per asset
+    :param prev_weights:     (n,) weights from previous period (None on first call)
+    :param turnover_penalty: lambda >= 0, scales L1 turnover cost in objective
+    :return:                 x (n,) cleaned portfolio weights
     """
 
     n = Q.shape[0]
@@ -56,9 +56,7 @@ def mean_variance_optimization(mu, Q, risk_aversion=5.0, max_weight=0.25):
 
     x = cp.Variable(n)
 
-    objective = cp.Maximize(
-        mu @ x - (risk_aversion / 2) * cp.quad_form(x, Q)
-    )
+    objective = mu @ x - (risk_aversion / 2) * cp.quad_form(x, Q)
 
     constraints = [
         cp.sum(x) == 1,
@@ -66,7 +64,7 @@ def mean_variance_optimization(mu, Q, risk_aversion=5.0, max_weight=0.25):
         x <= max_weight
     ]
 
-    problem = cp.Problem(objective, constraints)
+    problem = cp.Problem(cp.Maximize(objective), constraints)
 
     try:
         problem.solve(verbose=False)
@@ -78,21 +76,28 @@ def mean_variance_optimization(mu, Q, risk_aversion=5.0, max_weight=0.25):
         return np.ones(n) / n
 
 
-def MVO(mu, Q):
+def MVO(mu, Q, prev_weights=None, turnover_penalty=0.0,
+        risk_aversion=5.0, max_weight=0.25):
     """
-    Main MVO function used by the strategy.
+    Main MVO function used by the strategy. Pass Q_lw (Ledoit-Wolf covariance) directly
+    if using LW shrinkage — no extra parameters needed here.
 
-    Recommended setup:
-        mu, Q = estimate_mean_and_covariance(returns, method="ledoit_wolf")
-        x = MVO(mu, Q)
+    :param mu:               (n x 1) or (n,) expected returns
+    :param Q:                (n x n) covariance matrix
+    :param prev_weights:     (n,) previous weights for turnover penalty
+    :param turnover_penalty: lambda scaling the L1 turnover cost
+    :param risk_aversion:    MVO risk aversion parameter
+    :param max_weight:       max weight per asset
+    :return:                 x (n,) portfolio weights
     """
 
     x = mean_variance_optimization(
         mu=mu,
         Q=Q,
-        risk_aversion=5.0,
-        max_weight=0.25
+        risk_aversion=risk_aversion,
+        max_weight=max_weight,
+        prev_weights=prev_weights,
+        turnover_penalty=turnover_penalty
     )
 
     return x
-
