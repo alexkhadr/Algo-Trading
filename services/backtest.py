@@ -2,106 +2,189 @@ import numpy as np
 import pandas as pd
 import itertools
 from services.strategies import *
+import math
 
-def compute_metrics(portfolio_returns):
-    """
-    Computes annualized Sharpe ratio and average monthly turnover.
+from scipy.stats import gmean
 
-    :param portfolio_returns: list of dicts with keys 'return' and 'turnover'
-    :return: sharpe (float), avg_turnover (float)
-    """
-    rets = np.array([r['return'] for r in portfolio_returns])
-    turnovers = np.array([r['turnover'] for r in portfolio_returns
-                          if r['turnover'] is not None])
+def compute_metrics_official(portfValue, riskFree, turnover):
+    portfRets = portfValue.pct_change(1).iloc[1:, :]
 
-    sharpe = (rets.mean() / rets.std()) * np.sqrt(12)
-    avg_turnover = turnovers.mean() if len(turnovers) > 0 else np.nan
+    rf = riskFree[
+        (riskFree.index >= portfRets.index[0]) &
+        (riskFree.index <= portfRets.index[-1])
+    ]
 
-    return sharpe, avg_turnover
+    portfExRets = portfRets.subtract(rf, axis=0)
+
+    SR = ((portfExRets + 1).apply(gmean, axis=0) - 1) / portfExRets.std()
+    avgTurnover = np.mean(turnover[1:])
+
+    return float(SR.iloc[0]), float(avgTurnover)
 
 
 def run_backtest(prices, factorReturns, strategy_fn,
-                 init_window=60, rebal_freq=6):
-    """
-    Walk-forward backtest engine. Works with any strategy.
+                 initialVal=100000, init_window=60, rebal_freq=6):
 
-    :param prices:         T x n DataFrame of adjusted closing prices
-    :param factorReturns:  T x p DataFrame of factor returns, aligned to prices
-    :param strategy_fn:    callable(periodReturns, periodFactRet) -> weights (n,)
-    :param init_window:    months reserved for initial calibration
-    :param rebal_freq:     months between rebalancing
-    :return:               results (list of dicts), summary (dict)
-    """
-    returns = prices.pct_change().dropna()
-    T, n = returns.shape
+    prices = prices.copy()
+    factorReturns = factorReturns.copy()
 
-    results = []
-    current_weights = None
+    riskFree = factorReturns["RF"]
+    factors = factorReturns.drop(columns=["RF"])
 
-    for t in range(init_window, T, rebal_freq):
-        period_ret  = returns.iloc[:t, :]
-        period_fact = factorReturns.iloc[:t, :]
+    # Asset excess returns for strategy estimation
+    assetReturns = prices.pct_change(1).iloc[1:, :]
+    assetExcessReturns = assetReturns.subtract(riskFree, axis=0)
 
-        new_weights = strategy_fn(period_ret, period_fact)
+    # Align prices with returns
+    prices = prices.iloc[1:, :]
 
-        turnover = None
-        if current_weights is not None:
-            turnover = np.sum(np.abs(new_weights - current_weights))
+    T, n = assetExcessReturns.shape
 
-        current_weights = new_weights
+    NoPeriods = math.ceil((T - init_window) / rebal_freq)
 
-        end = min(t + rebal_freq, T)
-        for s in range(t, end):
-            r = returns.iloc[s, :].values
-            results.append({
-                'date':     returns.index[s],
-                'return':   current_weights @ r,
-                'turnover': turnover if s == t else None
-            })
+    x = np.zeros([n, NoPeriods])
+    x0 = np.zeros([n, NoPeriods])
+    currentVal = np.zeros([NoPeriods, 1])
+    turnover = np.zeros([NoPeriods, 1])
 
-    sharpe, avg_turnover = compute_metrics(results)
-    summary = {'sharpe': sharpe, 'avg_turnover': avg_turnover}
+    portfValue = []
 
-    print(f"Sharpe ratio:  {sharpe:.4f}")
-    print(f"Avg turnover:  {avg_turnover:.4f}")
+    for t in range(NoPeriods):
 
-    return results, summary
+        start_idx = init_window + t * rebal_freq
+        end_idx = min(start_idx + rebal_freq, T)
+
+        if start_idx >= T:
+            break
+
+        calEnd = assetExcessReturns.index[start_idx - 1]
+
+        periodReturns = assetExcessReturns.iloc[:start_idx, :]
+        periodFactRet = factors.iloc[:start_idx, :]
+
+        currentPrices = prices.loc[[calEnd]]
+        periodPrices = prices.iloc[start_idx:end_idx, :]
+
+        if t == 0:
+            currentVal[t] = initialVal
+        else:
+            currentVal[t] = currentPrices @ NoShares.values.T
+            x0[:, t] = currentPrices.values * NoShares.values / currentVal[t]
+
+        x[:, t] = strategy_fn(periodReturns, periodFactRet)
+
+        if t > 0:
+            turnover[t] = np.sum(np.abs(x[:, t] - x0[:, t]))
+
+        NoShares = x[:, t] * currentVal[t] / currentPrices
+
+        portfValue.append(periodPrices @ NoShares.values.T)
+
+    portfValue = pd.concat(portfValue, axis=0)
+
+    sharpe, avg_turnover = compute_metrics_official(
+        portfValue,
+        riskFree,
+        turnover
+    )
+
+    summary = {
+        "sharpe": sharpe,
+        "avg_turnover": avg_turnover
+    }
+
+    return portfValue, summary
+
+# def run_backtest(prices, factorReturns, strategy_fn,
+#                  init_window=60, rebal_freq=6):
+#     """
+#     Walk-forward backtest engine. Works with any strategy.
+
+#     :param prices:         T x n DataFrame of adjusted closing prices
+#     :param factorReturns:  T x p DataFrame of factor returns, aligned to prices
+#     :param strategy_fn:    callable(periodReturns, periodFactRet) -> weights (n,)
+#     :param init_window:    months reserved for initial calibration
+#     :param rebal_freq:     months between rebalancing
+#     :return:               results (list of dicts), summary (dict)
+#     """
+#     returns = prices.pct_change().dropna()
+#     T, n = returns.shape
+
+#     results = []
+#     current_weights = None
+
+#     for t in range(init_window, T, rebal_freq):
+#         period_ret  = returns.iloc[:t, :]
+#         period_fact = factorReturns.iloc[:t, :]
+
+#         new_weights = strategy_fn(period_ret, period_fact)
+
+#         turnover = None
+#         if current_weights is not None:
+#             turnover = np.sum(np.abs(new_weights - current_weights))
+
+#         current_weights = new_weights
+
+#         end = min(t + rebal_freq, T)
+#         for s in range(t, end):
+#             r = returns.iloc[s, :].values
+#             results.append({
+#                 'date':     returns.index[s],
+#                 'return':   current_weights @ r,
+#                 'turnover': turnover if s == t else None
+#             })
+
+#     sharpe, avg_turnover = compute_metrics(results)
+#     summary = {'sharpe': sharpe, 'avg_turnover': avg_turnover}
+
+#     print(f"Sharpe ratio:  {sharpe:.4f}")
+#     print(f"Avg turnover:  {avg_turnover:.4f}")
+
+#     return results, summary
 
 
 
 
 def make_ridge_lw(params):
-    """Factory for RidgeLedoitWolfMVO."""
     prev_w = [None]
 
     def strategy_fn(periodReturns, periodFactRet):
         strat = RidgeLedoitWolf_MVO(
-            NumObs=params.get('NumObs', 60),
-            ridge_alpha=params.get('ridge_alpha', 0.1),
-            lw_shrink_weight=params.get('lw_shrink_weight', 0.5),
-            turnover_penalty=params.get('turnover_penalty', 0.5),
+            NumObs=params.get("NumObs", 48),
+            ridge_alpha=params.get("ridge_alpha", 0.1),
+            lw_shrink_weight=params.get("lw_shrink_weight", 0.7),
+            turnover_penalty=params.get("turnover_penalty", 0.1),
             prev_weights=prev_w[0]
         )
+
         x = strat.execute_strategy(periodReturns, periodFactRet)
+
         prev_w[0] = x
+
         return x
 
     return strategy_fn
 
 
 def make_ols_mvo(params):
-    """Factory for OLS_MVO."""
     def strategy_fn(periodReturns, periodFactRet):
-        strat = OLS_MVO(NumObs=params.get('NumObs', 36))
+        strat = OLS_MVO(
+            NumObs=params.get("NumObs", 36),
+            risk_aversion=params.get("risk_aversion", 5.0),
+            max_weight=params.get("max_weight", 0.25)
+        )
         return strat.execute_strategy(periodReturns, periodFactRet)
 
     return strategy_fn
 
 
 def make_historical_mvo(params):
-    """Factory for HistoricalMeanVarianceOptimization."""
     def strategy_fn(periodReturns, periodFactRet):
-        strat = HistoricalMeanVarianceOptimization(NumObs=params.get('NumObs', 36))
+        strat = HistoricalMeanVarianceOptimization(
+            NumObs=params.get("NumObs", 36),
+            risk_aversion=params.get("risk_aversion", 5.0),
+            max_weight=params.get("max_weight", 0.25)
+        )
         return strat.execute_strategy(periodReturns, periodFactRet)
 
     return strategy_fn
@@ -114,13 +197,34 @@ def make_equal_weight(params):
 
     return strategy_fn
 
+def make_risk_parity(params):
+    def strategy_fn(periodReturns, periodFactRet):
+        strat = RiskParity(
+            NumObs=params.get("NumObs", 36),
+            covariance_method=params.get("covariance_method", "ledoit_wolf")
+        )
+        return strat.execute_strategy(periodReturns, periodFactRet)
+    return strategy_fn
+
+
+def make_historical_max_sharpe(params):
+    def strategy_fn(periodReturns, periodFactRet):
+        strat = HistoricalMaxSharpe(
+            NumObs=params.get("NumObs", 36),
+            max_weight=params.get("max_weight", 0.25)
+        )
+        return strat.execute_strategy(periodReturns, periodFactRet)
+    return strategy_fn
+
 
 
 STRATEGY_REGISTRY = {
-    'ridge_lw':       make_ridge_lw,
-    'ols_mvo':        make_ols_mvo,
-    'historical_mvo': make_historical_mvo,
-    'equal_weight':   make_equal_weight,
+    "ridge_lw": make_ridge_lw,
+    "ols_mvo": make_ols_mvo,
+    "historical_mvo": make_historical_mvo,
+    "equal_weight": make_equal_weight,
+    "risk_parity": make_risk_parity,
+    "historical_max_sharpe": make_historical_max_sharpe,
 }
 
 
@@ -153,8 +257,9 @@ def grid_search(prices, factorReturns, strategy_name, param_grid,
     val_end   = val_end   or int(T * 0.8)
 
     train_prices  = prices.iloc[:train_end + 1]
-    val_prices    = prices.iloc[train_end:val_end + 1]
-    test_prices   = prices.iloc[val_end:]
+    val_prices    = prices.iloc[train_end + 1:val_end + 1]
+    test_prices   = prices.iloc[val_end + 1:]
+
     train_factors = factorReturns.iloc[:train_end]
     val_factors   = factorReturns.iloc[train_end:val_end]
     test_factors  = factorReturns.iloc[val_end:]

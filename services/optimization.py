@@ -55,9 +55,16 @@ def mean_variance_optimization(mu, Q, risk_aversion=5.0, max_weight=0.25,
     n = Q.shape[0]
     mu = np.asarray(mu).flatten()
 
+    Q = (Q + Q.T) / 2
+    Q = Q + 1e-6 * np.eye(n)
+
     x = cp.Variable(n)
 
     objective = mu @ x - (risk_aversion / 2) * cp.quad_form(x, Q)
+
+    if prev_weights is not None and turnover_penalty > 0:
+        prev_weights = np.asarray(prev_weights).flatten()
+        objective = objective - turnover_penalty * cp.norm1(x - prev_weights)
 
     constraints = [
         cp.sum(x) == 1,
@@ -69,11 +76,9 @@ def mean_variance_optimization(mu, Q, risk_aversion=5.0, max_weight=0.25,
 
     try:
         problem.solve(verbose=False)
-
         return clean_weights(x.value, n)
 
     except Exception:
-        # If the solver fails, use equal weights as a safe fallback
         return np.ones(n) / n
 
 

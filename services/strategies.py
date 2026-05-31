@@ -21,53 +21,50 @@ def equal_weight(periodReturns):
 
 
 class HistoricalMeanVarianceOptimization:
-    """
-    uses historical returns to estimate the covariance matrix and expected return
-    """
 
-    def __init__(self, NumObs=36):
-        self.NumObs = NumObs  # number of observations to use
+    def __init__(self, NumObs=36, risk_aversion=5.0, max_weight=0.25):
+        self.NumObs = NumObs
+        self.risk_aversion = risk_aversion
+        self.max_weight = max_weight
 
     def execute_strategy(self, periodReturns, factorReturns=None):
-        """
-        executes the portfolio allocation strategy based on the parameters in the __init__
 
-        :param periodReturns:
-        :param factorReturns:
-        :return: x
-        """
-        factorReturns = None  # we are not using the factor returns
-        returns = periodReturns.iloc[(-1) * self.NumObs:, :]
-        print(len(returns))
+        returns = periodReturns.iloc[-self.NumObs:, :]
+
         mu = np.expand_dims(returns.mean(axis=0).values, axis=1)
         Q = returns.cov().values
-        x = MVO(mu, Q)
+
+        x = MVO(
+            mu,
+            Q,
+            risk_aversion=self.risk_aversion,
+            max_weight=self.max_weight
+        )
 
         return x
 
 
 class OLS_MVO:
-    """
-    uses historical returns to estimate the covariance matrix and expected return
-    """
 
-    def __init__(self, NumObs=36):
-        self.NumObs = NumObs  # number of observations to use
+    def __init__(self, NumObs=36, risk_aversion=5.0, max_weight=0.25):
+        self.NumObs = NumObs
+        self.risk_aversion = risk_aversion
+        self.max_weight = max_weight
 
     def execute_strategy(self, periodReturns, factorReturns):
-        """
-        executes the portfolio allocation strategy based on the parameters in the __init__
 
-        :param factorReturns:
-        :param periodReturns:
-        :return:x
-        """
-        T, n = periodReturns.shape
-        # get the last T observations
-        returns = periodReturns.iloc[(-1) * self.NumObs:, :]
-        factRet = factorReturns.iloc[(-1) * self.NumObs:, :]
+        returns = periodReturns.iloc[-self.NumObs:, :]
+        factRet = factorReturns.iloc[-self.NumObs:, :]
+
         mu, Q = OLS(returns, factRet)
-        x = MVO(mu, Q)
+
+        x = MVO(
+            mu,
+            Q,
+            risk_aversion=self.risk_aversion,
+            max_weight=self.max_weight
+        )
+
         return x
 
     
@@ -146,8 +143,8 @@ class RidgeLedoitWolf_MVO:
       - Max-Sharpe MVO with turnover penalty
     """
 
-    def __init__(self, NumObs=60, ridge_alpha=0.1, lw_shrink_weight=0.5,
-                 turnover_penalty=0.5, prev_weights=None):
+    def __init__(self, NumObs=48, ridge_alpha=0.1, lw_shrink_weight=0.7,
+                 turnover_penalty=0.1, prev_weights=None):
         """
         :param NumObs:            rolling window length in months
         :param ridge_alpha:       Ridge L2 regularization strength
