@@ -83,10 +83,10 @@ def ridge_factor_model(returns, factRet, alpha=0.1):
     # Asset expected returns and covariance
     f_bar = f_mean.reshape(-1, 1)
     mu = a.reshape(-1, 1) + V.T @ f_bar
-    Q = V.T @ F_cov @ V + D
-    Q = (Q + Q.T) / 2
+    Q_factor = V.T @ F_cov @ V + D
+    Q_factor = (Q_factor + Q_factor.T) / 2
 
-    return mu, Q, V, F_cov, D
+    return mu, Q_factor, V, F_cov, D
 
 
 def ledoit_wolf_covariance(returns, shrink_target=None, shrink_weight=0.5):
