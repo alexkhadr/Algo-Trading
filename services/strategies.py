@@ -75,26 +75,31 @@ class RiskParity:
     """
     Long-only risk parity strategy.
 
-    Finds portfolio weights such that each asset contributes approximately
-    equally to total portfolio variance.
+    Uses either:
+    - sample covariance
+    - Ledoit-Wolf covariance
     """
 
-    def __init__(self, NumObs=36):
+    def __init__(self, NumObs=36, covariance_method="ledoit_wolf"):
         self.NumObs = NumObs
+        self.covariance_method = covariance_method
 
     def execute_strategy(self, periodReturns, factorReturns=None):
-        """
-        :param periodReturns: asset return DataFrame
-        :param factorReturns: unused
-        :return: x, long-only fully invested portfolio weights
-        """
 
         returns = periodReturns.iloc[-self.NumObs:, :]
-        Q = returns.cov().values
+
+        if self.covariance_method == "sample":
+            Q = returns.cov().values
+
+        elif self.covariance_method == "ledoit_wolf":
+            Q = ledoit_wolf_covariance(returns)
+
+        else:
+            raise ValueError("covariance_method must be 'sample' or 'ledoit_wolf'")
 
         n = Q.shape[0]
 
-        # small ridge term for numerical stability
+        Q = (Q + Q.T) / 2
         Q = Q + 1e-6 * np.eye(n)
 
         def portfolio_variance(w):
@@ -103,21 +108,19 @@ class RiskParity:
         def risk_contributions(w):
             port_var = portfolio_variance(w)
             marginal_risk = Q @ w
-            rc = w * marginal_risk / port_var
-            return rc
+            return w * marginal_risk / port_var
 
         def objective(w):
             rc = risk_contributions(w)
             target = np.ones(n) / n
             return np.sum((rc - target) ** 2)
 
-        constraints = ({
+        constraints = {
             "type": "eq",
             "fun": lambda w: np.sum(w) - 1
-        })
+        }
 
         bounds = [(0, 1) for _ in range(n)]
-
         w0 = np.ones(n) / n
 
         result = minimize(
@@ -129,13 +132,10 @@ class RiskParity:
             options={"maxiter": 1000, "ftol": 1e-10}
         )
 
-        if not result.success:
-            # fallback to equal weight if optimization fails
-            x = w0
+        if result.success:
+            return result.x
         else:
-            x = result.x
-
-        return x
+            return w0
     
 
 class RidgeLedoitWolf_MVO:
