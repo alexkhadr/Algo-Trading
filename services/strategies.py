@@ -186,3 +186,31 @@ class RidgeLedoitWolf_MVO:
                 turnover_penalty=self.turnover_penalty)
 
         return x
+    
+    
+    
+class HistoricalMaxSharpe:
+    """
+    Long-only maximum Sharpe strategy using historical mean returns
+    and Ledoit-Wolf covariance.
+    """
+
+    def __init__(self, NumObs=36, max_weight=0.25):
+        self.NumObs = NumObs
+        self.max_weight = max_weight
+
+    def execute_strategy(self, periodReturns, factorReturns=None):
+
+        returns = periodReturns.iloc[-self.NumObs:, :]
+
+        mu = returns.mean(axis=0).values
+        Q = ledoit_wolf_covariance(returns)
+
+        x = max_sharpe_optimization(
+            mu=mu,
+            Q=Q,
+            rf=0.0,
+            max_weight=self.max_weight
+        )
+
+        return x

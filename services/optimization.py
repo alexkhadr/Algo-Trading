@@ -1,5 +1,6 @@
 import cvxpy as cp
 import numpy as np
+from scipy.optimize import minimize
 
 
 def clean_weights(x, n):
@@ -101,3 +102,55 @@ def MVO(mu, Q, prev_weights=None, turnover_penalty=0.0,
     )
 
     return x
+
+
+
+
+def max_sharpe_optimization(mu, Q, rf=0.0, max_weight=0.25):
+    """
+    Long-only maximum Sharpe ratio portfolio.
+
+    maximize (mu'x - rf) / sqrt(x'Qx)
+
+    subject to:
+        sum(x) = 1
+        0 <= x_i <= max_weight
+    """
+
+    n = Q.shape[0]
+    mu = np.asarray(mu).flatten()
+
+    Q = (Q + Q.T) / 2
+    Q = Q + 1e-6 * np.eye(n)
+
+    def negative_sharpe(x):
+        port_return = mu @ x
+        port_vol = np.sqrt(x.T @ Q @ x)
+
+        if port_vol <= 0:
+            return 1e6
+
+        return -((port_return - rf) / port_vol)
+
+    constraints = {
+        "type": "eq",
+        "fun": lambda x: np.sum(x) - 1
+    }
+
+    bounds = [(0, max_weight) for _ in range(n)]
+
+    x0 = np.ones(n) / n
+
+    result = minimize(
+        negative_sharpe,
+        x0,
+        method="SLSQP",
+        bounds=bounds,
+        constraints=constraints,
+        options={"maxiter": 1000, "ftol": 1e-10}
+    )
+
+    if result.success:
+        return clean_weights(result.x, n)
+    else:
+        return np.ones(n) / n
