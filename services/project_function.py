@@ -31,7 +31,7 @@ def project_function(periodReturns, periodFactRet, x0=None):
         NumObs=48,
         ridge_alpha=0.1,
         lw_shrink_weight=0.7,
-        turnover_penalty=0.1,
+        turnover_penalty=0.0,
         prev_weights=prev_weights
     )
 
