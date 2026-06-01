@@ -70,8 +70,13 @@ def run_backtest(prices, factorReturns, strategy_fn,
         else:
             currentVal[t] = currentPrices @ NoShares.values.T
             x0[:, t] = currentPrices.values * NoShares.values / currentVal[t]
+        
+        try:
+            x[:, t] = strategy_fn(periodReturns, periodFactRet, x0)
+        except TypeError:
+            x[:, t] = strategy_fn(periodReturns, periodFactRet)
 
-        x[:, t] = strategy_fn(periodReturns, periodFactRet)
+       
 
         if t > 0:
             turnover[t] = np.sum(np.abs(x[:, t] - x0[:, t]))
@@ -217,6 +222,15 @@ def make_historical_max_sharpe(params):
     return strategy_fn
 
 
+def make_project_function(params):
+    from services.project_function import project_function
+
+    def strategy_fn(periodReturns, periodFactRet, x0=None):
+        return project_function(periodReturns, periodFactRet, x0)
+
+    return strategy_fn
+
+
 
 STRATEGY_REGISTRY = {
     "ridge_lw": make_ridge_lw,
@@ -225,6 +239,7 @@ STRATEGY_REGISTRY = {
     "equal_weight": make_equal_weight,
     "risk_parity": make_risk_parity,
     "historical_max_sharpe": make_historical_max_sharpe,
+    "project_function": make_project_function,
 }
 
 
