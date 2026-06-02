@@ -341,7 +341,7 @@ The final evaluation follows the project methodology. The first 60 months of obs
 
 | Strategy | Test Sharpe Ratio | Average Turnover |
 |---|---|---|
-| Final Project Function  | 0.1803        | 0.0629 |
+| Final Project Function  | 0.1991        | 0.5213 |
 | Ridge + LW              | 0.1991        | 0.5213 |
 | OLS MVO                 | 0.1546        | 0.4590 |
 | Historical MVO          | 0.1606        | 0.4654 |
