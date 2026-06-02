@@ -317,7 +317,7 @@ After hyperparameter selection, each strategy was evaluated on a previously unse
 
 | Strategy | Test Sharpe Ratio | Average Turnover |
 |---|---|---|
-| Final Project Function  | 0.2233        | 0.0430 |
+| Final Project Function  | 0.1796        | 0.5226 |
 | Ridge + LW              | 0.1796        | 0.5226 |
 | OLS MVO                 | 0.2246        | 0.4098 |
 | Historical MVO          | 0.2239        | 0.4298 |
